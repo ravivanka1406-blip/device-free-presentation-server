@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+    <title>Faculty Presentation Portal</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+
+</head>
+
+
+<body>
+
+<div class="container">
+
+    <h1>Faculty Presentation Portal</h1>
+
+    <p class="subtitle">
+        Upload your presentation
+    </p>
+
+
+    {% with messages = get_flashed_messages() %}
+
+        {% if messages %}
+
+            {% for message in messages %}
+
+                <div class="message">
+                    {{ message }}
+                </div>
+
+            {% endfor %}
+
+        {% endif %}
+
+    {% endwith %}
+
+
+    <div class="card">
+
+        <h2>Upload Presentation</h2>
+
+
+        <form
+            action="/upload"
+            method="POST"
+            enctype="multipart/form-data"
+        >
+
+
+            <label>
+                Faculty ID
+            </label>
+
+            <input
+                type="text"
+                name="faculty_id"
+                placeholder="Example: FAC001"
+                required
+            >
+
+
+            <label>
+                Faculty Name
+            </label>
+
+            <input
+                type="text"
+                name="faculty_name"
+                placeholder="Example: Dr. Ravi Kumar"
+                required
+            >
+
+
+            <label>
+                PowerPoint Presentation
+            </label>
+
+            <input
+                type="file"
+                name="presentation"
+                accept=".ppt,.pptx"
+                required
+            >
+
+
+            <button type="submit">
+                Upload Presentation
+            </button>
+
+        </form>
+
+    </div>
+
+
+    <div class="card">
+
+        <h2>Faculty Presentations</h2>
+
+
+        {% if faculty %}
+
+        <table>
+
+            <tr>
+
+                <th>Faculty ID</th>
+
+                <th>Faculty Name</th>
+
+                <th>Presentation</th>
+
+                <th>Download</th>
+
+            </tr>
+
+
+            {% for person in faculty %}
+
+            <tr>
+
+                <td>
+                    {{ person["faculty_id"] }}
+                </td>
+
+                <td>
+                    {{ person["faculty_name"] }}
+                </td>
+
+                <td>
+                    {{ person["ppt_filename"] or "No PPT" }}
+                </td>
+
+                <td>
+
+                    {% if person["ppt_filename"] %}
+
+                    <a
+                        href="/download/{{ person['ppt_filename'] }}"
+                    >
+                        Download
+                    </a>
+
+                    {% endif %}
+
+                </td>
+
+            </tr>
+
+            {% endfor %}
+
+        </table>
+
+        {% else %}
+
+        <p>
+            No faculty presentations uploaded.
+        </p>
+
+        {% endif %}
+
+    </div>
+
+</div>
+
+</body>
+
+</html>
