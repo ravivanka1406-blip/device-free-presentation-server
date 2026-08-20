@@ -9,9 +9,8 @@ from flask import (
     jsonify
 )
 
+import sqlite3
 import os
-import psycopg
-from psycopg.rows import dict_row
 
 from werkzeug.utils import secure_filename
 
@@ -26,6 +25,7 @@ app.secret_key = "presentation-system-secret"
 # --------------------------------------------------
 
 UPLOAD_FOLDER = "uploads"
+DATABASE = "database.db"
 
 ALLOWED_EXTENSIONS = {"ppt", "pptx"}
 
@@ -35,29 +35,17 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
 # --------------------------------------------------
-# PostgreSQL Database
+# Database
 # --------------------------------------------------
 
 def get_db():
 
-    database_url = os.environ.get("DATABASE_URL")
+    conn = sqlite3.connect(DATABASE)
 
-    if not database_url:
-        raise RuntimeError(
-            "DATABASE_URL environment variable is not set."
-        )
-
-    conn = psycopg.connect(
-        database_url,
-        row_factory=dict_row
-    )
+    conn.row_factory = sqlite3.Row
 
     return conn
 
-
-# --------------------------------------------------
-# Initialize Database
-# --------------------------------------------------
 
 def init_database():
 
@@ -65,7 +53,7 @@ def init_database():
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS faculty (
-            id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             faculty_id TEXT UNIQUE NOT NULL,
             faculty_name TEXT NOT NULL,
             ppt_filename TEXT
@@ -73,6 +61,7 @@ def init_database():
     """)
 
     conn.commit()
+
     conn.close()
 
 
@@ -130,10 +119,7 @@ def upload():
     file = request.files.get("presentation")
 
 
-    # ----------------------------------------------
     # Validate Faculty ID
-    # ----------------------------------------------
-
     if not faculty_id:
 
         flash("Faculty ID is required.")
@@ -141,10 +127,7 @@ def upload():
         return redirect(url_for("home"))
 
 
-    # ----------------------------------------------
     # Validate Faculty Name
-    # ----------------------------------------------
-
     if not faculty_name:
 
         flash("Faculty name is required.")
@@ -152,10 +135,7 @@ def upload():
         return redirect(url_for("home"))
 
 
-    # ----------------------------------------------
     # Validate File
-    # ----------------------------------------------
-
     if not file or file.filename == "":
 
         flash("Please select a PowerPoint file.")
@@ -163,10 +143,7 @@ def upload():
         return redirect(url_for("home"))
 
 
-    # ----------------------------------------------
     # Validate Extension
-    # ----------------------------------------------
-
     if not allowed_file(file.filename):
 
         flash("Only PPT and PPTX files are allowed.")
@@ -176,34 +153,30 @@ def upload():
 
     filename = secure_filename(file.filename)
 
-
     conn = get_db()
 
 
-    # ----------------------------------------------
-    # Check Existing Faculty
-    # ----------------------------------------------
-
+    # Check if faculty already exists
     existing = conn.execute(
         """
         SELECT *
         FROM faculty
-        WHERE faculty_id = %s
+        WHERE faculty_id = ?
         """,
         (faculty_id,)
     ).fetchone()
 
 
-    # ----------------------------------------------
+    # --------------------------------------------------
     # Existing Faculty
-    # ----------------------------------------------
+    # --------------------------------------------------
 
     if existing:
 
         old_filename = existing["ppt_filename"]
 
 
-        # Delete old local PPT
+        # Delete old PPT
         if old_filename:
 
             old_path = os.path.join(
@@ -216,7 +189,7 @@ def upload():
                 os.remove(old_path)
 
 
-        # Save new PPT locally for now
+        # Save new PPT
         file.save(
             os.path.join(
                 UPLOAD_FOLDER,
@@ -225,13 +198,13 @@ def upload():
         )
 
 
-        # Update PostgreSQL
+        # Update database
         conn.execute(
             """
             UPDATE faculty
-            SET faculty_name = %s,
-                ppt_filename = %s
-            WHERE faculty_id = %s
+            SET faculty_name = ?,
+                ppt_filename = ?
+            WHERE faculty_id = ?
             """,
             (
                 faculty_name,
@@ -245,13 +218,13 @@ def upload():
         )
 
 
-    # ----------------------------------------------
+    # --------------------------------------------------
     # New Faculty
-    # ----------------------------------------------
+    # --------------------------------------------------
 
     else:
 
-        # Save PPT locally for now
+        # Save PPT
         file.save(
             os.path.join(
                 UPLOAD_FOLDER,
@@ -260,7 +233,7 @@ def upload():
         )
 
 
-        # Insert into PostgreSQL
+        # Insert faculty
         conn.execute(
             """
             INSERT INTO faculty
@@ -269,7 +242,7 @@ def upload():
                 faculty_name,
                 ppt_filename
             )
-            VALUES (%s, %s, %s)
+            VALUES (?, ?, ?)
             """,
             (
                 faculty_id,
@@ -284,15 +257,15 @@ def upload():
 
 
     conn.commit()
-    conn.close()
 
+    conn.close()
 
     return redirect(url_for("home"))
 
 
 # --------------------------------------------------
 # Faculty API
-# Raspberry Pi will use this later
+# Raspberry Pi will use this
 # --------------------------------------------------
 
 @app.route("/api/faculty/<faculty_id>")
@@ -304,7 +277,7 @@ def faculty_api(faculty_id):
         """
         SELECT *
         FROM faculty
-        WHERE faculty_id = %s
+        WHERE faculty_id = ?
         """,
         (faculty_id,)
     ).fetchone()
@@ -330,7 +303,6 @@ def faculty_api(faculty_id):
         }), 404
 
 
-    # Return faculty information
     return jsonify({
 
         "success": True,
@@ -368,7 +340,7 @@ def download(filename):
 
 
 # --------------------------------------------------
-# Initialize PostgreSQL
+# Initialize Database
 # --------------------------------------------------
 
 init_database()
