@@ -1,18 +1,31 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, jsonify
-import sqlite3
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    send_from_directory,
+    jsonify
+)
+
 import os
+import psycopg
+from psycopg.rows import dict_row
+
 from werkzeug.utils import secure_filename
+
 
 app = Flask(__name__)
 
 app.secret_key = "presentation-system-secret"
 
-# -----------------------------
+
+# --------------------------------------------------
 # Configuration
-# -----------------------------
+# --------------------------------------------------
 
 UPLOAD_FOLDER = "uploads"
-DATABASE = "database.db"
 
 ALLOWED_EXTENSIONS = {"ppt", "pptx"}
 
@@ -21,15 +34,30 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
-# -----------------------------
-# Database
-# -----------------------------
+# --------------------------------------------------
+# PostgreSQL Database
+# --------------------------------------------------
 
 def get_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
+
+    database_url = os.environ.get("DATABASE_URL")
+
+    if not database_url:
+        raise RuntimeError(
+            "DATABASE_URL environment variable is not set."
+        )
+
+    conn = psycopg.connect(
+        database_url,
+        row_factory=dict_row
+    )
+
     return conn
 
+
+# --------------------------------------------------
+# Initialize Database
+# --------------------------------------------------
 
 def init_database():
 
@@ -37,7 +65,7 @@ def init_database():
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS faculty (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             faculty_id TEXT UNIQUE NOT NULL,
             faculty_name TEXT NOT NULL,
             ppt_filename TEXT
@@ -48,21 +76,22 @@ def init_database():
     conn.close()
 
 
-# -----------------------------
-# File validation
-# -----------------------------
+# --------------------------------------------------
+# File Validation
+# --------------------------------------------------
 
 def allowed_file(filename):
 
     return (
         "." in filename
-        and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+        and filename.rsplit(".", 1)[1].lower()
+        in ALLOWED_EXTENSIONS
     )
 
 
-# -----------------------------
-# Home page
-# -----------------------------
+# --------------------------------------------------
+# Home Page
+# --------------------------------------------------
 
 @app.route("/")
 def home():
@@ -83,68 +112,98 @@ def home():
     )
 
 
-# -----------------------------
+# --------------------------------------------------
 # Upload PPT
-# -----------------------------
+# --------------------------------------------------
 
 @app.route("/upload", methods=["POST"])
 def upload():
 
-    faculty_id = request.form.get("faculty_id", "").strip()
-    faculty_name = request.form.get("faculty_name", "").strip()
+    faculty_id = request.form.get(
+        "faculty_id", ""
+    ).strip()
+
+    faculty_name = request.form.get(
+        "faculty_name", ""
+    ).strip()
+
     file = request.files.get("presentation")
 
-    # Validate faculty ID
+
+    # ----------------------------------------------
+    # Validate Faculty ID
+    # ----------------------------------------------
+
     if not faculty_id:
 
         flash("Faculty ID is required.")
 
         return redirect(url_for("home"))
 
-    # Validate faculty name
+
+    # ----------------------------------------------
+    # Validate Faculty Name
+    # ----------------------------------------------
+
     if not faculty_name:
 
         flash("Faculty name is required.")
 
         return redirect(url_for("home"))
 
-    # Validate file
+
+    # ----------------------------------------------
+    # Validate File
+    # ----------------------------------------------
+
     if not file or file.filename == "":
 
         flash("Please select a PowerPoint file.")
 
         return redirect(url_for("home"))
 
-    # Validate extension
+
+    # ----------------------------------------------
+    # Validate Extension
+    # ----------------------------------------------
+
     if not allowed_file(file.filename):
 
         flash("Only PPT and PPTX files are allowed.")
 
         return redirect(url_for("home"))
 
+
     filename = secure_filename(file.filename)
+
 
     conn = get_db()
 
-    # Check if faculty already exists
+
+    # ----------------------------------------------
+    # Check Existing Faculty
+    # ----------------------------------------------
+
     existing = conn.execute(
         """
         SELECT *
         FROM faculty
-        WHERE faculty_id = ?
+        WHERE faculty_id = %s
         """,
         (faculty_id,)
     ).fetchone()
 
-    # ---------------------------------
-    # Existing faculty
-    # ---------------------------------
+
+    # ----------------------------------------------
+    # Existing Faculty
+    # ----------------------------------------------
 
     if existing:
 
         old_filename = existing["ppt_filename"]
 
-        # Delete old PPT
+
+        # Delete old local PPT
         if old_filename:
 
             old_path = os.path.join(
@@ -156,7 +215,8 @@ def upload():
 
                 os.remove(old_path)
 
-        # Save new PPT
+
+        # Save new PPT locally for now
         file.save(
             os.path.join(
                 UPLOAD_FOLDER,
@@ -164,13 +224,14 @@ def upload():
             )
         )
 
-        # Update database
+
+        # Update PostgreSQL
         conn.execute(
             """
             UPDATE faculty
-            SET faculty_name = ?,
-                ppt_filename = ?
-            WHERE faculty_id = ?
+            SET faculty_name = %s,
+                ppt_filename = %s
+            WHERE faculty_id = %s
             """,
             (
                 faculty_name,
@@ -179,14 +240,18 @@ def upload():
             )
         )
 
-        flash("Presentation updated successfully.")
+        flash(
+            "Presentation updated successfully."
+        )
 
-    # ---------------------------------
-    # New faculty
-    # ---------------------------------
+
+    # ----------------------------------------------
+    # New Faculty
+    # ----------------------------------------------
 
     else:
 
+        # Save PPT locally for now
         file.save(
             os.path.join(
                 UPLOAD_FOLDER,
@@ -194,6 +259,8 @@ def upload():
             )
         )
 
+
+        # Insert into PostgreSQL
         conn.execute(
             """
             INSERT INTO faculty
@@ -202,7 +269,7 @@ def upload():
                 faculty_name,
                 ppt_filename
             )
-            VALUES (?, ?, ?)
+            VALUES (%s, %s, %s)
             """,
             (
                 faculty_id,
@@ -211,18 +278,22 @@ def upload():
             )
         )
 
-        flash("Presentation uploaded successfully.")
+        flash(
+            "Presentation uploaded successfully."
+        )
+
 
     conn.commit()
     conn.close()
 
+
     return redirect(url_for("home"))
 
 
-# -----------------------------
-# API
-# Raspberry Pi will use this
-# -----------------------------
+# --------------------------------------------------
+# Faculty API
+# Raspberry Pi will use this later
+# --------------------------------------------------
 
 @app.route("/api/faculty/<faculty_id>")
 def faculty_api(faculty_id):
@@ -233,13 +304,15 @@ def faculty_api(faculty_id):
         """
         SELECT *
         FROM faculty
-        WHERE faculty_id = ?
+        WHERE faculty_id = %s
         """,
         (faculty_id,)
     ).fetchone()
 
     conn.close()
 
+
+    # Faculty not found
     if not faculty:
 
         return jsonify({
@@ -247,6 +320,8 @@ def faculty_api(faculty_id):
             "message": "Faculty not found"
         }), 404
 
+
+    # No PPT
     if not faculty["ppt_filename"]:
 
         return jsonify({
@@ -254,6 +329,8 @@ def faculty_api(faculty_id):
             "message": "No presentation uploaded"
         }), 404
 
+
+    # Return faculty information
     return jsonify({
 
         "success": True,
@@ -276,9 +353,9 @@ def faculty_api(faculty_id):
     })
 
 
-# -----------------------------
+# --------------------------------------------------
 # PPT Download
-# -----------------------------
+# --------------------------------------------------
 
 @app.route("/download/<filename>")
 def download(filename):
@@ -290,11 +367,16 @@ def download(filename):
     )
 
 
-# -----------------------------
-# Start server
-# -----------------------------
+# --------------------------------------------------
+# Initialize PostgreSQL
+# --------------------------------------------------
+
 init_database()
 
+
+# --------------------------------------------------
+# Start Server
+# --------------------------------------------------
 
 if __name__ == "__main__":
 
