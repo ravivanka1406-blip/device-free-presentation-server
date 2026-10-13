@@ -17,7 +17,7 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-app.secret_key = "presentation-system-secret"
+app.secret_key = os.environ.get("SECRET_KEY")
 
 
 # --------------------------------------------------
@@ -355,5 +355,5 @@ if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=5000,
-        debug=True
+        debug=False
     )
