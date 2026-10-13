@@ -2,18 +2,16 @@
 
 ## Overview
 
-This repository contains the backend server for the Device-Free Presentation System. The application is developed using Python Flask and SQLite to manage faculty information and PowerPoint presentation files.
-
-The server provides a web interface for uploading presentations, maintains faculty records, exposes an API for retrieving presentation details, and provides an endpoint for downloading uploaded files.
+This repository contains the backend server for the Device-Free Presentation System. Developed using Python Flask and SQLite, the application provides a web interface for uploading PowerPoint presentations, managing faculty records, retrieving presentation details through a REST API, and downloading presentation files.
 
 ## Features
 
 - Upload PowerPoint presentations in `.ppt` and `.pptx` formats.
 - Register faculty members using a unique faculty ID and faculty name.
-- Update the presentation associated with an existing faculty ID.
+- Update existing faculty records and their associated presentations.
 - Store faculty information and presentation filenames in an SQLite database.
-- Retrieve faculty and presentation details in JSON format through a REST API.
-- Generate download URLs for stored presentations.
+- Retrieve faculty and presentation details in JSON format.
+- Generate download URLs for uploaded presentations.
 - Download PowerPoint files through a dedicated endpoint.
 - Display faculty records through a web interface.
 
@@ -22,33 +20,35 @@ The server provides a web interface for uploading presentations, maintains facul
 - **Programming Language:** Python
 - **Backend Framework:** Flask
 - **Database:** SQLite
-- **Frontend Templating:** HTML and Jinja2
+- **Frontend:** HTML, CSS, and Jinja2
 - **File Handling:** Werkzeug
 - **Deployment Platform:** Render
-- **Production WSGI Server:** Gunicorn
+- **Production Server:** Gunicorn
 
 ## Project Structure
 
 ```text
 device-free-presentation-server/
 ├── static/
-│   └── style.css          # CSS styles for the web interface
+│   └── style.css
 ├── templates/
-│   └── upload.html        # HTML template for presentation uploads
-├── app.py                 # Flask application and API endpoints
-├── requirements.txt       # Python dependencies
-└── README.md              # Project documentation
+│   └── upload.html
+├── app.py
+├── requirements.txt
+├── .gitignore
+└── README.md
 ```
 
 ### File Descriptions
 
-- **`app.py`** — Implements the Flask web application, SQLite database initialization, faculty record management, PowerPoint uploads, API responses, and presentation downloads.
-- **`templates/upload.html`** — Provides the HTML template for the presentation upload interface and faculty records.
-- **`static/style.css`** — Contains the CSS styling for the web interface.
-- **`requirements.txt`** — Lists the Python packages required to run the application.
-- **`README.md`** — Documents the project, installation steps, API endpoints, and deployment instructions.
+- `app.py` — Implements the Flask application, database operations, file uploads, API endpoints, and presentation downloads.
+- `templates/upload.html` — Provides the HTML template for the presentation upload interface and faculty records.
+- `static/style.css` — Contains the styles for the web interface.
+- `requirements.txt` — Lists the Python dependencies required to run the application.
+- `.gitignore` — Specifies files and directories excluded from Git.
+- `README.md` — Contains project documentation and setup instructions.
 
-The SQLite database (`database.db`) and uploaded presentation files (`uploads/`) are created or populated at runtime and are not required to be committed to the repository.
+The SQLite database and uploaded presentation files are created or populated at runtime.
 
 ## Installation and Setup
 
@@ -61,11 +61,9 @@ The SQLite database (`database.db`) and uploaded presentation files (`uploads/`)
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
-cd YOUR_REPOSITORY
+git clone https://github.com/ravivanka1406-blip/device-free-presentation-server.git
+cd device-free-presentation-server
 ```
-
-Replace the repository URL with the URL of this repository.
 
 ### 2. Create a Virtual Environment
 
@@ -87,26 +85,28 @@ venv\Scripts\activate
 
 ### 3. Install Dependencies
 
-Create a `requirements.txt` file with the following dependencies:
+Install the required packages:
+
+```bash
+pip install -r requirements.txt
+```
+
+The `requirements.txt` file should include:
 
 ```text
 Flask
 gunicorn
 ```
 
-Install them using:
-
-```bash
-pip install -r requirements.txt
-```
-
 ### 4. Run the Application
+
+Start the development server:
 
 ```bash
 python app.py
 ```
 
-The development server listens on port `5000`.
+The application listens on port `5000`.
 
 Open the following address in your browser:
 
@@ -114,17 +114,23 @@ Open the following address in your browser:
 http://127.0.0.1:5000/
 ```
 
-The application initializes the SQLite database and creates the upload directory when it starts.
+The application initializes the SQLite database and creates the upload directory automatically.
 
 ## Web Interface
 
-The home page (`/`) displays existing faculty records and provides the presentation upload interface.
+The home page is available at `/`.
 
-The upload form accepts a faculty ID, faculty name, and PowerPoint file.
+It displays the registered faculty records and provides a form for uploading presentations.
 
-When a new faculty ID is submitted, the application creates a faculty record and associates the uploaded presentation with it. When an existing faculty ID is submitted, the application updates the faculty name and associated presentation.
+The upload form accepts:
 
-Only files with `.ppt` and `.pptx` extensions are accepted by the current file-extension validation.
+- Faculty ID
+- Faculty name
+- PowerPoint presentation file
+
+When a new faculty ID is submitted, the application creates a faculty record and associates the uploaded file with it. When an existing faculty ID is submitted, the application updates the faculty name and associated presentation.
+
+The current implementation validates uploaded files using their filename extensions and accepts `.ppt` and `.pptx` files.
 
 ## API Documentation
 
@@ -154,7 +160,7 @@ GET /api/faculty/FAC001
 }
 ```
 
-The response includes the faculty identifier, faculty name, presentation filename, and a generated download URL. The values above are examples.
+The example values are illustrative. The actual response contains the faculty details stored in the database.
 
 **Faculty not found — HTTP 404**
 
@@ -165,7 +171,7 @@ The response includes the faculty identifier, faculty name, presentation filenam
 }
 ```
 
-**No presentation associated with the faculty record — HTTP 404**
+**No presentation uploaded — HTTP 404**
 
 ```json
 {
@@ -188,11 +194,11 @@ GET /download/<filename>
 GET /download/presentation.pptx
 ```
 
-The endpoint serves the requested file from the configured upload directory as a downloadable attachment.
+The endpoint serves the requested file from the upload directory as a downloadable attachment.
 
 ## Database
 
-The application uses SQLite to store faculty information.
+The application uses SQLite to store faculty records.
 
 The `faculty` table contains the following fields:
 
@@ -203,44 +209,44 @@ The `faculty` table contains the following fields:
 | `faculty_name` | Faculty member's name |
 | `ppt_filename` | Associated presentation filename |
 
-The database table is created automatically if it does not already exist.
+The table is created automatically if it does not already exist.
 
-## Deployment
+## Deployment on Render
 
 The application can be deployed as a Python web service on Render.
 
-**Build command**
+### Build Command
 
 ```bash
 pip install -r requirements.txt
 ```
 
-**Start command**
+### Start Command
 
 ```bash
 gunicorn app:app
 ```
 
-The start command assumes that the Flask application instance is named `app` in `app.py`.
+The start command assumes that `app.py` contains a Flask application instance named `app`.
 
 After deployment, the service URL can be used to access the web interface and API endpoints.
 
-### Storage
+### Storage Considerations
 
-The application stores uploaded files in the `uploads/` directory and database records in `database.db`.
+The application currently stores its SQLite database in `database.db` and uploaded files in the `uploads/` directory.
 
-When deploying to a hosting platform, configure persistent storage if uploaded files and database records must survive redeployments or instance replacements. The current implementation uses local SQLite storage and local file storage.
+On hosting platforms, local files may not persist across redeployments or instance replacements. Configure persistent storage or an appropriate managed database and file storage solution when data retention is required.
 
-## Security
+## Security Considerations
 
-- Keep secret keys and other sensitive configuration out of source control.
+- Keep secret keys and sensitive configuration out of source control.
 - Use environment variables for deployment-specific secrets.
 - Disable Flask debug mode in production.
-- Configure appropriate file upload size limits and file validation.
-- Restrict upload and update operations with authentication and authorization before production use.
+- Configure appropriate upload size limits and file validation.
+- Implement authentication and authorization for upload and update operations before production use.
 - Use HTTPS for public deployments.
 - Back up important database records and uploaded files.
 
 ## License
 
-No license is specified.
+No license is currently specified. 
