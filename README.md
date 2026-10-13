@@ -31,16 +31,24 @@ The server provides a web interface for uploading presentations, maintains facul
 
 ```text
 device-free-presentation-server/
-├── app.py
-├── requirements.txt
-├── .gitignore
-├── README.md
+├── static/
+│   └── style.css          # CSS styles for the web interface
 ├── templates/
-│   └── upload.html
-└── uploads/
+│   └── upload.html        # HTML template for presentation uploads
+├── app.py                 # Flask application and API endpoints
+├── requirements.txt       # Python dependencies
+└── README.md              # Project documentation
 ```
 
-The `uploads/` directory is created automatically when the application starts. The SQLite database is also initialized automatically.
+### File Descriptions
+
+- **`app.py`** — Implements the Flask web application, SQLite database initialization, faculty record management, PowerPoint uploads, API responses, and presentation downloads.
+- **`templates/upload.html`** — Provides the HTML template for the presentation upload interface and faculty records.
+- **`static/style.css`** — Contains the CSS styling for the web interface.
+- **`requirements.txt`** — Lists the Python packages required to run the application.
+- **`README.md`** — Documents the project, installation steps, API endpoints, and deployment instructions.
+
+The SQLite database (`database.db`) and uploaded presentation files (`uploads/`) are created or populated at runtime and are not required to be committed to the repository.
 
 ## Installation and Setup
 
