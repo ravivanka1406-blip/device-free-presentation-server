@@ -17,7 +17,7 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-app.secret_key = os.environ.get("SECRET_KEY")
+app.secret_key = "presentation-system-secret"
 
 
 # --------------------------------------------------
