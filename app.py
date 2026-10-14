@@ -19,7 +19,7 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 
 # Read the secret key from Render environment variables
-app.secret_key = "presentation-system-secret"
+app.secret_key = os.environ.get("SECRET_KEY")
 
 if not app.secret_key:
     raise RuntimeError(
