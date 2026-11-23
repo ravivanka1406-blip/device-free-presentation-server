@@ -1,13 +1,10 @@
 from flask import (Flask, render_template, request, redirect, url_for,
                    flash, send_from_directory, jsonify, abort)
 from werkzeug.utils import secure_filename
-from werkzeug.exceptions import HTTPException
-from functools import wraps
 import sqlite3
 import os
 import re
 import uuid
-import hmac
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY')
@@ -91,20 +88,6 @@ def init_database():
                 raise
 
 
-def management_required(view):
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        expected = os.environ.get('PORTAL_ADMIN_KEY')
-        supplied = request.form.get('admin_key', '') or request.headers.get('X-Admin-Key', '')
-        if not expected:
-            abort(503, description='Set PORTAL_ADMIN_KEY on the server to enable changes.')
-        if not hmac.compare_digest(supplied, expected):
-            flash('Invalid management key.')
-            return redirect(url_for('home'))
-        return view(*args, **kwargs)
-    return wrapped
-
-
 @app.route('/')
 def home():
     with get_db() as conn:
@@ -119,7 +102,6 @@ def home():
 
 
 @app.route('/upload', methods=['POST'])
-@management_required
 def upload():
     faculty_id = clean_faculty_id(request.form.get('faculty_id', ''))
     faculty_name = request.form.get('faculty_name', '').strip()
@@ -185,7 +167,6 @@ def upload():
 
 
 @app.route('/delete/<int:presentation_id>', methods=['POST'])
-@management_required
 def delete_presentation(presentation_id):
     with get_db() as conn:
         row = conn.execute('''SELECT faculty_id, stored_filename FROM presentations
