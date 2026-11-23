@@ -1,368 +1,246 @@
-from flask import (
-    Flask,
-    render_template,
-    request,
-    redirect,
-    url_for,
-    flash,
-    send_from_directory,
-    jsonify
-)
-
+from flask import (Flask, render_template, request, redirect, url_for,
+                   flash, send_from_directory, jsonify, abort)
+from werkzeug.utils import secure_filename
+from werkzeug.exceptions import HTTPException
+from functools import wraps
 import sqlite3
 import os
+import re
 import uuid
-
-from werkzeug.utils import secure_filename
-
+import hmac
 
 app = Flask(__name__)
-
-# Read the secret key from Render environment variables
-app.secret_key = os.environ.get("SECRET_KEY")
-
+app.secret_key = os.environ.get('SECRET_KEY')
 if not app.secret_key:
-    raise RuntimeError(
-        "SECRET_KEY environment variable is not configured."
-    )
-
-
-# --------------------------------------------------
-# Configuration
-# --------------------------------------------------
+    raise RuntimeError('SECRET_KEY environment variable is not configured.')
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
-DATABASE = os.path.join(BASE_DIR, "database.db")
-
-ALLOWED_EXTENSIONS = {"ppt", "pptx"}
-
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-
-# Limit uploads to 100 MB
-app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
-
+UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', os.path.join(BASE_DIR, 'uploads'))
+DATABASE = os.environ.get('DATABASE_PATH', os.path.join(BASE_DIR, 'database.db'))
+ALLOWED_EXTENSIONS = {'ppt', 'pptx'}
+FACULTY_ID_PATTERN = re.compile(r'^[A-Za-z0-9_-]{1,40}$')
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
-# --------------------------------------------------
-# Database
-# --------------------------------------------------
-
 def get_db():
-    conn = sqlite3.connect(DATABASE)
+    conn = sqlite3.connect(DATABASE, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA foreign_keys = ON')
     return conn
 
 
-def init_database():
-    conn = get_db()
-
-    try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS faculty (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                faculty_id TEXT UNIQUE NOT NULL,
-                faculty_name TEXT NOT NULL,
-                ppt_filename TEXT
-            )
-        """)
-
-        conn.commit()
-
-    finally:
-        conn.close()
-
-
-# --------------------------------------------------
-# File Validation
-# --------------------------------------------------
-
 def allowed_file(filename):
-    return (
-        bool(filename)
-        and "." in filename
-        and filename.rsplit(".", 1)[1].lower()
-        in ALLOWED_EXTENSIONS
-    )
+    return bool(filename) and '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def generate_unique_filename(original_filename):
-    safe_filename = secure_filename(original_filename)
-
-    if not safe_filename or "." not in safe_filename:
-        raise ValueError("Invalid filename.")
-
-    extension = safe_filename.rsplit(".", 1)[1].lower()
-
-    if extension not in ALLOWED_EXTENSIONS:
-        raise ValueError("Unsupported PowerPoint file type.")
-
-    return f"{uuid.uuid4().hex}.{extension}"
+def clean_faculty_id(value):
+    value = value.strip().upper()
+    return value if FACULTY_ID_PATTERN.fullmatch(value) else None
 
 
-# --------------------------------------------------
-# Home Page
-# --------------------------------------------------
+def faculty_directory(faculty_id):
+    return os.path.join(UPLOAD_FOLDER, faculty_id)
 
-@app.route("/")
+
+def init_database():
+    with get_db() as conn:
+        conn.execute('''CREATE TABLE IF NOT EXISTS faculty (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            faculty_id TEXT UNIQUE NOT NULL,
+            faculty_name TEXT NOT NULL,
+            ppt_filename TEXT
+        )''')
+        conn.execute('''CREATE TABLE IF NOT EXISTS presentations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            faculty_id TEXT NOT NULL,
+            original_filename TEXT NOT NULL,
+            stored_filename TEXT NOT NULL,
+            uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (faculty_id) REFERENCES faculty(faculty_id) ON DELETE CASCADE,
+            UNIQUE(faculty_id, original_filename),
+            UNIQUE(faculty_id, stored_filename)
+        )''')
+        # Legacy migration: preserve the old upload and register it once.
+        old_rows = conn.execute('''SELECT faculty_id, ppt_filename FROM faculty
+                                   WHERE ppt_filename IS NOT NULL AND ppt_filename != '' ''').fetchall()
+        for row in old_rows:
+            fid = row['faculty_id']
+            old_name = row['ppt_filename']
+            if not clean_faculty_id(fid) or not allowed_file(old_name):
+                continue
+            old_path = os.path.join(UPLOAD_FOLDER, old_name)
+            if not os.path.isfile(old_path):
+                continue
+            target_dir = faculty_directory(fid)
+            os.makedirs(target_dir, exist_ok=True)
+            new_name = f'{uuid.uuid4().hex}.{old_name.rsplit(".", 1)[1].lower()}'
+            target_path = os.path.join(target_dir, new_name)
+            # Move legacy file once. If the process stops, the old DB field remains
+            # and a subsequent startup can retry if the source still exists.
+            os.replace(old_path, target_path)
+            try:
+                conn.execute('''INSERT OR IGNORE INTO presentations
+                                (faculty_id, original_filename, stored_filename)
+                                VALUES (?, ?, ?)''', (fid, old_name, new_name))
+                conn.execute('UPDATE faculty SET ppt_filename = NULL WHERE faculty_id = ?', (fid,))
+                conn.commit()
+            except Exception:
+                os.replace(target_path, old_path)
+                raise
+
+
+def management_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        expected = os.environ.get('PORTAL_ADMIN_KEY')
+        supplied = request.form.get('admin_key', '') or request.headers.get('X-Admin-Key', '')
+        if not expected:
+            abort(503, description='Set PORTAL_ADMIN_KEY on the server to enable changes.')
+        if not hmac.compare_digest(supplied, expected):
+            flash('Invalid management key.')
+            return redirect(url_for('home'))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.route('/')
 def home():
-    conn = get_db()
-
-    try:
-        faculty = conn.execute("""
-            SELECT *
-            FROM faculty
-            ORDER BY faculty_id
-        """).fetchall()
-
-    finally:
-        conn.close()
-
-    return render_template(
-        "upload.html",
-        faculty=faculty
-    )
+    with get_db() as conn:
+        faculty = conn.execute('''SELECT faculty_id, faculty_name FROM faculty
+                                  ORDER BY faculty_id''').fetchall()
+        presentations = conn.execute('''SELECT id, faculty_id, original_filename, uploaded_at
+                                        FROM presentations ORDER BY faculty_id, original_filename''').fetchall()
+    grouped = {}
+    for presentation in presentations:
+        grouped.setdefault(presentation['faculty_id'], []).append(presentation)
+    return render_template('upload.html', faculty=faculty, grouped=grouped)
 
 
-# --------------------------------------------------
-# Upload or Update PowerPoint
-# --------------------------------------------------
-
-@app.route("/upload", methods=["POST"])
+@app.route('/upload', methods=['POST'])
+@management_required
 def upload():
-
-    faculty_id = request.form.get(
-        "faculty_id", ""
-    ).strip()
-
-    faculty_name = request.form.get(
-        "faculty_name", ""
-    ).strip()
-
-    file = request.files.get("presentation")
-
-    # Validate faculty ID
-    if not faculty_id:
-        flash("Faculty ID is required.")
-        return redirect(url_for("home"))
-
-    # Validate faculty name
-    if not faculty_name:
-        flash("Faculty name is required.")
-        return redirect(url_for("home"))
-
-    # Validate file selection
-    if not file or not file.filename:
-        flash("Please select a PowerPoint file.")
-        return redirect(url_for("home"))
-
-    # Validate extension
-    if not allowed_file(file.filename):
-        flash("Only PPT and PPTX files are allowed.")
-        return redirect(url_for("home"))
-
-    # Generate a unique filename to prevent collisions
-    try:
-        filename = generate_unique_filename(file.filename)
-    except ValueError as error:
-        flash(str(error))
-        return redirect(url_for("home"))
-
-    file_path = os.path.join(UPLOAD_FOLDER, filename)
-
-    # Save the new file before updating the database.
-    # Remove the new file if the database operation fails.
-    try:
-        file.save(file_path)
-
-        conn = get_db()
-
-        try:
-            existing = conn.execute(
-                """
-                SELECT *
-                FROM faculty
-                WHERE faculty_id = ?
-                """,
-                (faculty_id,)
-            ).fetchone()
-
-            if existing:
-                old_filename = existing["ppt_filename"]
-
-                conn.execute(
-                    """
-                    UPDATE faculty
-                    SET faculty_name = ?,
-                        ppt_filename = ?
-                    WHERE faculty_id = ?
-                    """,
-                    (
-                        faculty_name,
-                        filename,
-                        faculty_id
-                    )
-                )
-
-                message = "Presentation updated successfully."
-
-            else:
-                old_filename = None
-
-                conn.execute(
-                    """
-                    INSERT INTO faculty (
-                        faculty_id,
-                        faculty_name,
-                        ppt_filename
-                    )
-                    VALUES (?, ?, ?)
-                    """,
-                    (
-                        faculty_id,
-                        faculty_name,
-                        filename
-                    )
-                )
-
-                message = "Presentation uploaded successfully."
-
-            conn.commit()
-
-        finally:
-            conn.close()
-
-    except sqlite3.Error:
-        if os.path.exists(file_path):
-            os.remove(file_path)
-
-        app.logger.exception("Database error during upload.")
-        flash("A database error occurred. Please try again.")
-        return redirect(url_for("home"))
-
-    except OSError:
-        app.logger.exception("File storage error during upload.")
-
-        if os.path.exists(file_path):
-            os.remove(file_path)
-
-        flash("Unable to save the PowerPoint file.")
-        return redirect(url_for("home"))
-
-    # Delete the previous file only after the database update succeeds.
-    if old_filename and old_filename != filename:
-        old_path = os.path.join(UPLOAD_FOLDER, old_filename)
-
-        try:
-            if os.path.isfile(old_path):
-                os.remove(old_path)
-        except OSError:
-            app.logger.exception(
-                "Could not delete the previous presentation file."
-            )
-
-    flash(message)
-    return redirect(url_for("home"))
-
-
-# --------------------------------------------------
-# Faculty API
-# Used by the Raspberry Pi application
-# --------------------------------------------------
-
-@app.route("/api/faculty/<faculty_id>", methods=["GET"])
-def faculty_api(faculty_id):
-
+    faculty_id = clean_faculty_id(request.form.get('faculty_id', ''))
+    faculty_name = request.form.get('faculty_name', '').strip()
+    files = request.files.getlist('presentations')
+    if not faculty_id or not faculty_name:
+        flash('Valid faculty ID and faculty name are required.')
+        return redirect(url_for('home'))
+    if not files or any(not f.filename or not allowed_file(f.filename) for f in files):
+        flash('Please select only .ppt or .pptx files.')
+        return redirect(url_for('home'))
+    # Avoid ambiguous duplicate names in the same request.
+    names = [secure_filename(f.filename) for f in files]
+    if any(not name for name in names) or len(names) != len(set(names)):
+        flash('Each uploaded file must have a unique, valid filename.')
+        return redirect(url_for('home'))
+    target_dir = faculty_directory(faculty_id)
+    os.makedirs(target_dir, exist_ok=True)
+    saved_paths = []
+    old_paths = []
     conn = get_db()
-
     try:
-        faculty = conn.execute(
-            """
-            SELECT faculty_id, faculty_name, ppt_filename
-            FROM faculty
-            WHERE faculty_id = ?
-            """,
-            (faculty_id,)
-        ).fetchone()
-
+        conn.execute('BEGIN IMMEDIATE')
+        conn.execute('''INSERT INTO faculty (faculty_id, faculty_name) VALUES (?, ?)
+                        ON CONFLICT(faculty_id) DO UPDATE SET faculty_name=excluded.faculty_name''',
+                     (faculty_id, faculty_name))
+        for file, original_name in zip(files, names):
+            ext = original_name.rsplit('.', 1)[1].lower()
+            stored_name = f'{uuid.uuid4().hex}.{ext}'
+            path = os.path.join(target_dir, stored_name)
+            file.save(path)
+            saved_paths.append(path)
+            old = conn.execute('''SELECT stored_filename FROM presentations
+                                  WHERE faculty_id = ? AND original_filename = ?''',
+                               (faculty_id, original_name)).fetchone()
+            if old:
+                old_paths.append(os.path.join(target_dir, old['stored_filename']))
+                conn.execute('''UPDATE presentations SET stored_filename = ?, uploaded_at = CURRENT_TIMESTAMP
+                                WHERE faculty_id = ? AND original_filename = ?''',
+                             (stored_name, faculty_id, original_name))
+            else:
+                conn.execute('''INSERT INTO presentations (faculty_id, original_filename, stored_filename)
+                                VALUES (?, ?, ?)''', (faculty_id, original_name, stored_name))
+        conn.commit()
+    except (sqlite3.Error, OSError):
+        conn.rollback()
+        for path in saved_paths:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        app.logger.exception('Upload failed')
+        flash('Upload failed. No database changes were saved.')
+        return redirect(url_for('home'))
     finally:
         conn.close()
-
-    if not faculty:
-        return jsonify({
-            "success": False,
-            "message": "Faculty not found"
-        }), 404
-
-    if not faculty["ppt_filename"]:
-        return jsonify({
-            "success": False,
-            "message": "No presentation uploaded"
-        }), 404
-
-    return jsonify({
-        "success": True,
-        "faculty_id": faculty["faculty_id"],
-        "faculty_name": faculty["faculty_name"],
-        "ppt_filename": faculty["ppt_filename"],
-        "download_url": url_for(
-            "download",
-            filename=faculty["ppt_filename"],
-            _external=True
-        )
-    })
+    for path in old_paths:
+        try:
+            os.remove(path)
+        except OSError:
+            app.logger.exception('Could not remove replaced presentation')
+    flash(f'{len(files)} presentation(s) uploaded successfully for {faculty_id}.')
+    return redirect(url_for('home'))
 
 
-# --------------------------------------------------
-# PowerPoint Download
-# --------------------------------------------------
-
-@app.route("/download/<filename>", methods=["GET"])
-def download(filename):
-
-    # Only allow files with permitted PowerPoint extensions
-    if not allowed_file(filename):
-        return jsonify({
-            "success": False,
-            "message": "Invalid file type"
-        }), 400
-
-    return send_from_directory(
-        UPLOAD_FOLDER,
-        filename,
-        as_attachment=True
-    )
+@app.route('/delete/<int:presentation_id>', methods=['POST'])
+@management_required
+def delete_presentation(presentation_id):
+    with get_db() as conn:
+        row = conn.execute('''SELECT faculty_id, stored_filename FROM presentations
+                              WHERE id = ?''', (presentation_id,)).fetchone()
+        if not row:
+            abort(404)
+        conn.execute('DELETE FROM presentations WHERE id = ?', (presentation_id,))
+    try:
+        os.remove(os.path.join(faculty_directory(row['faculty_id']), row['stored_filename']))
+    except FileNotFoundError:
+        pass
+    except OSError:
+        app.logger.exception('Failed to remove deleted presentation file')
+    flash('Presentation deleted.')
+    return redirect(url_for('home'))
 
 
-# --------------------------------------------------
-# File Too Large Handler
-# --------------------------------------------------
+@app.route('/api/faculty/<faculty_id>')
+def faculty_api(faculty_id):
+    faculty_id = clean_faculty_id(faculty_id)
+    if not faculty_id:
+        return jsonify(success=False, message='Invalid faculty ID'), 400
+    with get_db() as conn:
+        faculty = conn.execute('''SELECT faculty_id, faculty_name FROM faculty
+                                  WHERE faculty_id = ?''', (faculty_id,)).fetchone()
+        if not faculty:
+            return jsonify(success=False, message='Faculty not found'), 404
+        rows = conn.execute('''SELECT id, original_filename FROM presentations
+                               WHERE faculty_id = ? ORDER BY original_filename''',
+                            (faculty_id,)).fetchall()
+    return jsonify(success=True, faculty_id=faculty['faculty_id'],
+                   faculty_name=faculty['faculty_name'],
+                   presentations=[{'id': row['id'], 'filename': row['original_filename'],
+                                   'download_url': url_for('download_presentation',
+                                                           presentation_id=row['id'], _external=True)}
+                                  for row in rows])
+
+
+@app.route('/download/presentation/<int:presentation_id>')
+def download_presentation(presentation_id):
+    with get_db() as conn:
+        row = conn.execute('''SELECT faculty_id, original_filename, stored_filename
+                              FROM presentations WHERE id = ?''', (presentation_id,)).fetchone()
+    if not row:
+        abort(404)
+    return send_from_directory(faculty_directory(row['faculty_id']), row['stored_filename'],
+                               as_attachment=True, download_name=row['original_filename'])
+
 
 @app.errorhandler(413)
 def file_too_large(error):
-    return (
-        "File too large. Maximum upload size is 100 MB.",
-        413
-    )
+    return 'Request too large. Maximum total upload size is 100 MB.', 413
 
-
-# --------------------------------------------------
-# Initialize Database
-# --------------------------------------------------
 
 init_database()
 
-
-# --------------------------------------------------
-# Local Development
-# Render runs this app using Gunicorn
-# --------------------------------------------------
-
-if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000)),
-        debug=False
-    )
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
