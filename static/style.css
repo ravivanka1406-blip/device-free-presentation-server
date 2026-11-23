@@ -1,74 +1,23 @@
-body {
-    font-family: Arial, sans-serif;
-    background: #f2f4f7;
-    margin: 0;
-    padding: 40px;
-}
-
-.container {
-    max-width: 1000px;
-    margin: auto;
-}
-
-h1 {
-    text-align: center;
-}
-
-.subtitle {
-    text-align: center;
-    color: #666;
-}
-
-.card {
-    background: white;
-    padding: 25px;
-    margin-top: 25px;
-    border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-label {
-    display: block;
-    margin-top: 15px;
-    margin-bottom: 5px;
-    font-weight: bold;
-}
-
-input[type="text"],
-input[type="file"] {
-    width: 100%;
-    padding: 10px;
-    box-sizing: border-box;
-}
-
-button {
-    margin-top: 20px;
-    padding: 12px 25px;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 16px;
-}
-
-.message {
-    background: #dff0d8;
-    padding: 12px;
-    margin-top: 20px;
-}
-
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 15px;
-}
-
-th,
-td {
-    padding: 12px;
-    border-bottom: 1px solid #ddd;
-    text-align: left;
-}
-
-a {
-    text-decoration: none;
-}
+body { font-family: Arial, sans-serif; background: #f2f4f7; margin: 0; padding: 40px 18px; color: #202a36; }
+.container { max-width: 1000px; margin: auto; }
+h1 { text-align: center; }
+.subtitle { text-align: center; color: #666; }
+.card { background: white; padding: 25px; margin-top: 25px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+label { display: block; margin-top: 15px; margin-bottom: 5px; font-weight: bold; }
+input[type="text"], input[type="password"], input[type="file"] { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #c9d0d8; border-radius: 5px; }
+button { margin-top: 20px; padding: 12px 25px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; background: #2457aa; color: white; }
+button:hover { filter: brightness(0.92); }
+.message { background: #dff0d8; padding: 12px; margin-top: 20px; border-radius: 5px; }
+table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
+a { text-decoration: none; color: #2457aa; }
+a:hover { text-decoration: underline; }
+small { display: block; margin-top: 8px; color: #666; }
+.faculty-block { border-top: 1px solid #e2e6ec; padding-top: 14px; margin-top: 22px; }
+.faculty-id { color: #667085; font-size: 0.9em; font-weight: normal; }
+.table-scroll { overflow-x: auto; }
+.delete-form { display: flex; align-items: center; gap: 8px; }
+.delete-form input { min-width: 120px; }
+.delete-form button { margin: 0; padding: 9px 13px; font-size: 14px; }
+.danger { background: #b42318; }
+@media (max-width: 600px) { .card { padding: 16px; } th, td { padding: 8px; } .delete-form { flex-wrap: wrap; } }
