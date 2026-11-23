@@ -26,8 +26,6 @@
             <label for="presentations">PowerPoint Presentations</label>
             <input id="presentations" type="file" name="presentations" accept=".ppt,.pptx" multiple required>
             <small>Hold Ctrl (or Cmd) to select multiple files. Maximum total request size: 100 MB.</small>
-            <label for="admin_key">Management Key</label>
-            <input id="admin_key" type="password" name="admin_key" required autocomplete="off">
             <button type="submit">Upload Presentations</button>
         </form>
     </section>
@@ -51,7 +49,6 @@
                                 <td><a href="{{ url_for('download_presentation', presentation_id=ppt['id']) }}">Download</a></td>
                                 <td>
                                     <form class="delete-form" action="{{ url_for('delete_presentation', presentation_id=ppt['id']) }}" method="POST" onsubmit="return confirm('Delete this presentation?');">
-                                        <input type="password" name="admin_key" placeholder="Management key" aria-label="Management key for deleting {{ ppt['original_filename'] }}" required>
                                         <button type="submit" class="danger">Delete</button>
                                     </form>
                                 </td>
