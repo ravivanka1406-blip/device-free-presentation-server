@@ -1,174 +1,70 @@
 <!DOCTYPE html>
-
-<html>
-
+<html lang="en">
 <head>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Faculty Presentation Portal</title>
-
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', filename='style.css') }}"
-    >
-
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-
-
 <body>
-
 <div class="container">
-
     <h1>Faculty Presentation Portal</h1>
-
-    <p class="subtitle">
-        Upload your presentation
-    </p>
-
+    <p class="subtitle">Upload and manage PowerPoint presentations for each faculty member</p>
 
     {% with messages = get_flashed_messages() %}
-
-        {% if messages %}
-
-            {% for message in messages %}
-
-                <div class="message">
-                    {{ message }}
-                </div>
-
-            {% endfor %}
-
-        {% endif %}
-
+        {% for message in messages %}<div class="message">{{ message }}</div>{% endfor %}
     {% endwith %}
 
-
-    <div class="card">
-
-        <h2>Upload Presentation</h2>
-
-
-        <form
-            action="/upload"
-            method="POST"
-            enctype="multipart/form-data"
-        >
-
-
-            <label>
-                Faculty ID
-            </label>
-
-            <input
-                type="text"
-                name="faculty_id"
-                placeholder="Example: FAC001"
-                required
-            >
-
-
-            <label>
-                Faculty Name
-            </label>
-
-            <input
-                type="text"
-                name="faculty_name"
-                placeholder="Example: Dr. Ravi Kumar"
-                required
-            >
-
-
-            <label>
-                PowerPoint Presentation
-            </label>
-
-            <input
-                type="file"
-                name="presentation"
-                accept=".ppt,.pptx"
-                required
-            >
-
-
-            <button type="submit">
-                Upload Presentation
-            </button>
-
+    <section class="card">
+        <h2>Upload Presentations</h2>
+        <p>New filenames are added. Uploading a file with the same name replaces that faculty member's existing file.</p>
+        <form action="{{ url_for('upload') }}" method="POST" enctype="multipart/form-data">
+            <label for="faculty_id">Faculty ID</label>
+            <input id="faculty_id" type="text" name="faculty_id" placeholder="FAC001" pattern="[A-Za-z0-9_-]{1,40}" required>
+            <label for="faculty_name">Faculty Name</label>
+            <input id="faculty_name" type="text" name="faculty_name" placeholder="Dr. Ravi Kumar" required>
+            <label for="presentations">PowerPoint Presentations</label>
+            <input id="presentations" type="file" name="presentations" accept=".ppt,.pptx" multiple required>
+            <small>Hold Ctrl (or Cmd) to select multiple files. Maximum total request size: 100 MB.</small>
+            <label for="admin_key">Management Key</label>
+            <input id="admin_key" type="password" name="admin_key" required autocomplete="off">
+            <button type="submit">Upload Presentations</button>
         </form>
+    </section>
 
-    </div>
-
-
-    <div class="card">
-
+    <section class="card">
         <h2>Faculty Presentations</h2>
-
-
         {% if faculty %}
-
-        <table>
-
-            <tr>
-
-                <th>Faculty ID</th>
-
-                <th>Faculty Name</th>
-
-                <th>Presentation</th>
-
-                <th>Download</th>
-
-            </tr>
-
-
             {% for person in faculty %}
-
-            <tr>
-
-                <td>
-                    {{ person["faculty_id"] }}
-                </td>
-
-                <td>
-                    {{ person["faculty_name"] }}
-                </td>
-
-                <td>
-                    {{ person["ppt_filename"] or "No PPT" }}
-                </td>
-
-                <td>
-
-                    {% if person["ppt_filename"] %}
-
-                    <a
-                        href="/download/{{ person['ppt_filename'] }}"
-                    >
-                        Download
-                    </a>
-
-                    {% endif %}
-
-                </td>
-
-            </tr>
-
+                <div class="faculty-block">
+                    <h3>{{ person['faculty_name'] }} <span class="faculty-id">({{ person['faculty_id'] }})</span></h3>
+                    {% set files = grouped.get(person['faculty_id'], []) %}
+                    {% if files %}
+                    <div class="table-scroll">
+                        <table>
+                            <thead><tr><th>Presentation</th><th>Uploaded</th><th>Download</th><th>Delete</th></tr></thead>
+                            <tbody>
+                            {% for ppt in files %}
+                            <tr>
+                                <td>{{ ppt['original_filename'] }}</td>
+                                <td>{{ ppt['uploaded_at'] }}</td>
+                                <td><a href="{{ url_for('download_presentation', presentation_id=ppt['id']) }}">Download</a></td>
+                                <td>
+                                    <form class="delete-form" action="{{ url_for('delete_presentation', presentation_id=ppt['id']) }}" method="POST" onsubmit="return confirm('Delete this presentation?');">
+                                        <input type="password" name="admin_key" placeholder="Management key" aria-label="Management key for deleting {{ ppt['original_filename'] }}" required>
+                                        <button type="submit" class="danger">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}<p>No presentations uploaded yet.</p>{% endif %}
+                </div>
             {% endfor %}
-
-        </table>
-
-        {% else %}
-
-        <p>
-            No faculty presentations uploaded.
-        </p>
-
-        {% endif %}
-
-    </div>
-
+        {% else %}<p>No faculty presentations uploaded yet.</p>{% endif %}
+    </section>
 </div>
-
 </body>
-
 </html>
