@@ -20,12 +20,12 @@
         <p>New filenames are added. Uploading a file with the same name replaces that faculty member's existing file.</p>
         <form action="{{ url_for('upload') }}" method="POST" enctype="multipart/form-data">
             <label for="faculty_id">Faculty ID</label>
-            <input id="faculty_id" type="text" name="faculty_id" placeholder="FAC001" pattern="[A-Za-z0-9_-]{1,40}" required>
+            <input id="faculty_id" type="text" name="faculty_id" placeholder="Ex: FAC001" pattern="[A-Za-z0-9_-]{1,40}" required>
             <label for="faculty_name">Faculty Name</label>
-            <input id="faculty_name" type="text" name="faculty_name" placeholder="Dr. Ravi Kumar" required>
+            <input id="faculty_name" type="text" name="faculty_name" placeholder="Ex: Dr. Ravi Kumar" required>
             <label for="presentations">PowerPoint Presentations</label>
             <input id="presentations" type="file" name="presentations" accept=".ppt,.pptx" multiple required>
-            <small>Hold Ctrl (or Cmd) to select multiple files. Maximum total request size: 100 MB.</small>
+            <small>Maximum total request size: 100 MB.</small>
             <button type="submit">Upload Presentations</button>
         </form>
     </section>
